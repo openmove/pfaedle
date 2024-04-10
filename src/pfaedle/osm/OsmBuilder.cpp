@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <float.h>
+
 #include <algorithm>
 #include <exception>
 #include <iostream>
@@ -12,7 +13,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+
 #include "pfaedle/Def.h"
+#include "pfaedle/_config.h"
 #include "pfaedle/osm/BBoxIdx.h"
 #include "pfaedle/osm/Osm.h"
 #include "pfaedle/osm/OsmBuilder.h"
@@ -21,7 +24,7 @@
 #include "util/Misc.h"
 #include "util/Nullable.h"
 #include "util/log/Log.h"
-#include "xml/pfxml.h"
+#include "pfxml/pfxml.h"
 
 using ad::cppgtfs::gtfs::Stop;
 using pfaedle::osm::BlockSearch;
@@ -134,17 +137,11 @@ void OsmBuilder::read(const std::string& path, const OsmReadOpts& opts,
   LOG(DEBUG) << "Snapping stations...";
   snapStats(opts, g, bbox, gridSize, res, orphanStations);
 
-  LOG(DEBUG) << "Deleting orphan edges...";
-  deleteOrphEdgs(g, opts);
-
   LOG(DEBUG) << "Collapsing edges...";
   collapseEdges(g);
 
   LOG(DEBUG) << "Writing edge geoms...";
   writeGeoms(g, opts);
-
-  LOG(DEBUG) << "Deleting orphan edges...";
-  deleteOrphEdgs(g, opts);
 
   LOG(DEBUG) << "Deleting orphan nodes...";
   deleteOrphNds(g, opts);
@@ -185,8 +182,8 @@ void OsmBuilder::read(const std::string& path, const OsmReadOpts& opts,
 
 // _____________________________________________________________________________
 void OsmBuilder::osmfilterRuleWrite(std::ostream* out,
-                                  const std::vector<OsmReadOpts>& opts,
-                                  const BBoxIdx& latLngBox) const {
+                                    const std::vector<OsmReadOpts>& opts,
+                                    const BBoxIdx& latLngBox) const {
   UNUSED(latLngBox);
   OsmIdSet bboxNodes, noHupNodes;
   MultAttrMap emptyF;
@@ -313,7 +310,7 @@ void OsmBuilder::overpassQryWrite(std::ostream* out,
 // _____________________________________________________________________________
 void OsmBuilder::filterWrite(const std::string& in, const std::string& out,
                              const std::vector<OsmReadOpts>& opts,
-                             const BBoxIdx& latLngBox) {
+                             const BBoxIdx& box) {
   OsmIdSet bboxNodes, noHupNodes;
   MultAttrMap emptyF;
 
@@ -330,13 +327,57 @@ void OsmBuilder::filterWrite(const std::string& in, const std::string& out,
   NIdMultMap multNodes;
 
   pfxml::file xml(in);
-  std::ofstream outstr;
-  outstr.open(out);
 
-  util::xml::XmlWriter wr(&outstr, true, 4);
+  BBoxIdx latLngBox = box;
 
-  outstr << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-  wr.openTag("osm");
+  if (latLngBox.size() == 0) {
+    skipUntil(&xml, "bounds");
+
+    const pfxml::tag& cur = xml.get();
+
+    if (strcmp(cur.name, "bounds") != 0) {
+      throw pfxml::parse_exc(
+          std::string("Could not find required <bounds> tag"), in, 0, 0, 0);
+    }
+
+    if (!cur.attr("minlat")) {
+      throw pfxml::parse_exc(
+          std::string(
+              "Could not find required attribute \"minlat\" for <bounds> tag"),
+          in, 0, 0, 0);
+    }
+    if (!cur.attr("minlon")) {
+      throw pfxml::parse_exc(
+          std::string(
+              "Could not find required attribute \"minlon\" for <bounds> tag"),
+          in, 0, 0, 0);
+    }
+    if (!cur.attr("maxlat")) {
+      throw pfxml::parse_exc(
+          std::string(
+              "Could not find required attribute \"maxlat\" for <bounds> tag"),
+          in, 0, 0, 0);
+    }
+    if (!cur.attr("maxlon")) {
+      throw pfxml::parse_exc(
+          std::string(
+              "Could not find required attribute \"maxlon\" for <bounds> tag"),
+          in, 0, 0, 0);
+    }
+
+    double minlat = atof(cur.attr("minlat"));
+    double minlon = atof(cur.attr("minlon"));
+    double maxlat = atof(cur.attr("maxlat"));
+    double maxlon = atof(cur.attr("maxlon"));
+
+    latLngBox.add(Box<double>({minlon, minlat}, {maxlon, maxlat}));
+  }
+
+  util::xml::XmlWriter wr(out, false, 0);
+
+  wr.put("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+  wr.openTag("osm", {{"version", "0.6"},
+                     {"generator", std::string("pfaedle/") + VERSION_FULL}});
   wr.openTag(
       "bounds",
       {{"minlat", std::to_string(latLngBox.getFullBox().getLowerLeft().getY())},
@@ -1072,7 +1113,7 @@ void OsmBuilder::writeGeoms(Graph* g, const OsmReadOpts& opts) {
         e->pl().addPoint(*e->getTo()->pl().getGeom());
       }
 
-      e->pl().setCost(costToInt(dist(e->getFrom(), e->getTo()) /
+      e->pl().setCost(costToInt(e->pl().getLength() /
                                 opts.levelDefSpeed[e->pl().lvl()]));
     }
   }
@@ -1520,30 +1561,6 @@ void OsmBuilder::deleteOrphNds(Graph* g, const OsmReadOpts& opts) {
 }
 
 // _____________________________________________________________________________
-void OsmBuilder::deleteOrphEdgs(Graph* g, const OsmReadOpts& opts) {
-  size_t ROUNDS = 3;
-  for (size_t c = 0; c < ROUNDS; c++) {
-    for (auto i = g->getNds().begin(); i != g->getNds().end();) {
-      if ((*i)->getInDeg() + (*i)->getOutDeg() != 1 || (*i)->pl().getSI() ||
-          (*i)->pl().isTurnCycle()) {
-        ++i;
-        continue;
-      }
-
-      // check if the removal of this edge would transform a steep angle
-      // full turn at an intersection into a node 2 eligible for contraction
-      // if so, dont delete
-      if (keepFullTurn(*i, opts.fullTurnAngle)) {
-        ++i;
-        continue;
-      }
-
-      i = g->delNd(*i);
-    }
-  }
-}
-
-// _____________________________________________________________________________
 bool OsmBuilder::edgesSim(const Edge* a, const Edge* b) {
   if (static_cast<bool>(a->pl().oneWay()) ^ static_cast<bool>(b->pl().oneWay()))
     return false;
@@ -1809,6 +1826,8 @@ bool OsmBuilder::keepFullTurn(const trgraph::Node* n, double ang) {
     }
 
     POINT ap, bp;
+
+    if (!a || !b) return false;
 
     if (a->pl().getGeom() && b->pl().getGeom()) {
       ap = a->pl().backHop();

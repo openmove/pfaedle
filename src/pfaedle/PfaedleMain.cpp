@@ -9,10 +9,13 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <clocale>
 #include <fstream>
 #include <map>
 #include <string>
 #include <vector>
+
 #include "ad/cppgtfs/Parser.h"
 #include "ad/cppgtfs/Writer.h"
 #include "pfaedle/config/ConfigReader.h"
@@ -60,12 +63,12 @@ using pfaedle::router::Router;
 using pfaedle::router::RouterImpl;
 using pfaedle::router::ShapeBuilder;
 using pfaedle::router::Stats;
-using pfaedle::statsimiclassifier::JaccardClassifier;
-using pfaedle::statsimiclassifier::JaccardGeodistClassifier;
-using pfaedle::statsimiclassifier::StatsimiClassifier;
 using pfaedle::statsimiclassifier::BTSClassifier;
 using pfaedle::statsimiclassifier::EDClassifier;
+using pfaedle::statsimiclassifier::JaccardClassifier;
+using pfaedle::statsimiclassifier::JaccardGeodistClassifier;
 using pfaedle::statsimiclassifier::PEDClassifier;
+using pfaedle::statsimiclassifier::StatsimiClassifier;
 
 enum class RetCode {
   SUCCESS = 0,
@@ -82,6 +85,9 @@ enum class RetCode {
 
 std::string getFileNameMotStr(const MOTs& mots);
 std::vector<std::string> getCfgPaths(const Config& cfg);
+
+// _____________________________________________________________________________
+void gtfsWarnCb(std::string msg) { LOG(WARN) << msg; }
 
 // _____________________________________________________________________________
 int main(int argc, char** argv) {
@@ -132,8 +138,10 @@ int main(int argc, char** argv) {
     if (!cfg.writeOverpass && !cfg.writeOsmfilter)
       LOG(INFO) << "Reading GTFS feed " << cfg.feedPaths[0] << " ...";
     try {
-      ad::cppgtfs::Parser p;
-      p.parse(&gtfs[0], cfg.feedPaths[0]);
+      ad::cppgtfs::Parser p(cfg.feedPaths[0], false,
+                            cfg.parseAdditionalGTFSFields,
+                            cfg.verbosity ? gtfsWarnCb : 0);
+      p.parse(&gtfs[0]);
     } catch (const ad::cppgtfs::ParserException& ex) {
       LOG(ERROR) << "Could not parse input GTFS feed, reason was:";
       std::cerr << ex.what() << std::endl;
@@ -143,9 +151,9 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < cfg.feedPaths.size(); i++) {
       if (!cfg.writeOverpass && !cfg.writeOsmfilter)
         LOG(INFO) << "Reading GTFS feed " << cfg.feedPaths[i] << " ...";
-      ad::cppgtfs::Parser p;
       try {
-        p.parse(&gtfs[i], cfg.feedPaths[i]);
+        ad::cppgtfs::Parser p(cfg.feedPaths[i]);
+        p.parse(&gtfs[i]);
       } catch (const ad::cppgtfs::ParserException& ex) {
         LOG(ERROR) << "Could not parse input GTFS feed, reason was:";
         std::cerr << ex.what() << std::endl;
@@ -189,7 +197,7 @@ int main(int argc, char** argv) {
 
     for (size_t i = 0; i < cfg.feedPaths.size(); i++) {
       ShapeBuilder::getGtfsBox(&gtfs[i], cmdCfgMots, cfg.shapeTripId, true,
-                               &box, maxSpeed, 0);
+                               &box, maxSpeed, 0, cfg.verbosity);
     }
     OsmBuilder osmBuilder;
     std::vector<pfaedle::osm::OsmReadOpts> opts;
@@ -211,7 +219,7 @@ int main(int argc, char** argv) {
     BBoxIdx box(BOX_PADDING);
     for (size_t i = 0; i < cfg.feedPaths.size(); i++) {
       ShapeBuilder::getGtfsBox(&gtfs[i], cmdCfgMots, cfg.shapeTripId, true,
-                               &box, maxSpeed, 0);
+                               &box, maxSpeed, 0, cfg.verbosity);
     }
     OsmBuilder osmBuilder;
     std::vector<pfaedle::osm::OsmReadOpts> opts;
@@ -266,9 +274,9 @@ int main(int argc, char** argv) {
       pfaedle::osm::OsmBuilder osmBuilder;
 
       pfaedle::osm::BBoxIdx box(BOX_PADDING);
-      ShapeBuilder::getGtfsBox(&gtfs[0], usedMots, cfg.shapeTripId,
-                               cfg.dropShapes, &box,
-                               motCfg.osmBuildOpts.maxSpeed, &hopDists);
+      ShapeBuilder::getGtfsBox(
+          &gtfs[0], usedMots, cfg.shapeTripId, cfg.dropShapes, &box,
+          motCfg.osmBuildOpts.maxSpeed, &hopDists, cfg.verbosity);
 
       T_START(osmBuild);
 
@@ -424,7 +432,6 @@ int main(int argc, char** argv) {
 
   if (cfg.feedPaths.size()) {
     try {
-      mkdir(cfg.outputPath.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
       LOG(INFO) << "Writing output GTFS to " << cfg.outputPath << " ...";
       pfaedle::gtfs::Writer w;
       w.write(&gtfs[0], cfg.outputPath);
@@ -440,8 +447,25 @@ int main(int argc, char** argv) {
 
 // _____________________________________________________________________________
 std::string getFileNameMotStr(const MOTs& mots) {
+  MOTs tmp = mots;
   std::string motStr;
-  for (const auto& mot : mots) {
+
+  std::string names[11] = {"tram",  "subway",     "rail",    "bus",
+                           "ferry", "cablecar",   "gondola", "funicular",
+                           "coach", "trolleybus", "monorail"};
+
+  for (const auto& n : names) {
+    const auto& types = ad::cppgtfs::gtfs::flat::Route::getTypesFromString(n);
+    const auto& isect = pfaedle::router::motISect(tmp, types);
+
+    if (isect.size() == types.size()) {
+      if (motStr.size()) motStr += "-";
+      motStr += n;
+      for (const auto& mot : isect) tmp.erase(mot);
+    }
+  }
+
+  for (const auto& mot : tmp) {
     if (motStr.size()) motStr += "-";
     motStr += ad::cppgtfs::gtfs::flat::Route::getTypeString(mot);
   }

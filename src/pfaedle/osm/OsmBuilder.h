@@ -25,7 +25,7 @@
 #include "util/Nullable.h"
 #include "util/geo/Geo.h"
 #include "util/xml/XmlWriter.h"
-#include "xml/pfxml.h"
+#include "pfxml/pfxml.h"
 
 namespace pfaedle {
 namespace osm {
@@ -180,7 +180,6 @@ class OsmBuilder {
                         double gridSize, Restrictor* res,
                         const NodeSet& orphanStations);
   static void writeGeoms(Graph* g, const OsmReadOpts& opts);
-  static void deleteOrphEdgs(Graph* g, const OsmReadOpts& opts);
   static void deleteOrphNds(Graph* g, const OsmReadOpts& opts);
   static double dist(const Node* a, const Node* b);
 

@@ -5,9 +5,15 @@
 #ifndef PFAEDLE_GTFS_WRITER_H_
 #define PFAEDLE_GTFS_WRITER_H_
 
+#include <memory>
 #include <string>
-#include "ad/cppgtfs/Writer.h"
+#ifdef LIBZIP_FOUND
+#include <zip.h>
+#endif
+
 #include "Feed.h"
+#include "ad/cppgtfs/Parser.h"
+#include "ad/cppgtfs/Writer.h"
 
 namespace pfaedle {
 namespace gtfs {
@@ -32,9 +38,19 @@ class Writer {
   void writeShapes(Feed* f, std::ostream* os) const;
   bool writeTrips(Feed* f, std::ostream* os) const;
   void writeStopTimes(Feed* f, std::ostream* os) const;
+  void writeLevels(Feed* f, std::ostream* os) const;
+  void writePathways(Feed* f, std::ostream* os) const;
+  void writeAttribution(Feed* f, std::ostream* os) const;
 
   static void cannotWrite(const std::string& file, const std::string& file2);
   static void cannotWrite(const std::string& file);
+
+#ifdef LIBZIP_FOUND
+  static void moveIntoZip(zip* za, const std::string& sourcePath,
+                          const std::string& targetPath);
+#endif
+
+  mutable std::ifstream _ifs;
 };
 
 }  // namespace gtfs

@@ -1,21 +1,18 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 3.5)
+set(CMAKE_CXX_STANDARD 11)
 
 project (pfaedle)
 
 if (CMAKE_BUILD_TYPE)
-	string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
+	string(SUBSTRING ${CMAKE_BUILD_TYPE} 0 1 FIRST_CHAR)
+	string(TOUPPER ${FIRST_CHAR} FIRST_CHAR)
+	string(REGEX REPLACE "^.(.*)" "${FIRST_CHAR}\\1" CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 endif()
-if (CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-	set(CPPLINT "${CMAKE_SOURCE_DIR}/cpplint.py")
-	include(cmake/cpplint.cmake)
-endif()
-
-set(CPPLINT_PROJECT_ROOT "src")
 
 enable_testing()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
-set(EXECUTABLE_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/build")
+set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 
 # set compiler flags, see http://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake
 set(CMAKE_CXX_FLAGS                "-Ofast -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -pedantic -Wno-keyword-macro")
@@ -29,23 +26,27 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -DLOGLEVEL=3")
 # export compile commands to tools like clang
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Compiler-specific C++11 activation.
-if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
-	execute_process(
-		COMMAND ${CMAKE_CXX_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)
-	if ((GCC_VERSION VERSION_GREATER 4.8 OR GCC_VERSION VERSION_EQUAL 4.8))
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-	else ()
-		message(FATAL_ERROR "${PROJECT_NAME} requires g++ 4.8 or greater!")
-	endif ()
-elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-	#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -std=c++11")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-else ()
-	message(FATAL_ERROR "Your C++ compiler does not support C++11.")
-endif ()
-
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPFAEDLE_PRECISION=${PFAEDLE_PRECISION}")
+
+find_package(LibZip)
+find_package(ZLIB)
+find_package(BZip2)
+
+if (LIBZIP_FOUND)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLIBZIP_FOUND=1")
+endif()
+
+if (ZLIB_FOUND)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DZLIB_FOUND=1")
+else ()
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPFXML_NO_ZLIB=1")
+endif()
+
+if (BZIP2_FOUND)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBZLIB_FOUND=1")
+else ()
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPFXML_NO_BZLIB=1")
+endif()
 
 # http://brianmilco.blogspot.de/2012/11/cmake-automatically-use-git-tags-as.html
 include(GetGitRevisionDescription)
@@ -78,11 +79,11 @@ install(
 )
 
 install(
-	FILES build/pfaedle DESTINATION bin
+	FILES ${CMAKE_BINARY_DIR}/pfaedle DESTINATION bin
 	PERMISSIONS OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE COMPONENT binaries
 )
 
 install(
-	FILES build/shapevl DESTINATION bin
+	FILES ${CMAKE_BINARY_DIR}/shapevl DESTINATION bin
 	PERMISSIONS OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE COMPONENT binaries
 )

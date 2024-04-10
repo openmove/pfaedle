@@ -6,6 +6,7 @@
 #define PFAEDLE_GTFS_FEED_H_
 
 #include <string>
+
 #include "Service.h"
 #include "ShapeContainer.h"
 #include "StopTime.h"
@@ -22,9 +23,11 @@ namespace gtfs {
 typedef ad::cppgtfs::gtfs::FeedB<
     ad::cppgtfs::gtfs::Agency, ad::cppgtfs::gtfs::Route,
     ad::cppgtfs::gtfs::Stop, Service, StopTime, Shape, ad::cppgtfs::gtfs::Fare,
+    ad::cppgtfs::gtfs::Level, ad::cppgtfs::gtfs::Pathway,
     ad::cppgtfs::gtfs::Container, ad::cppgtfs::gtfs::Container,
     ad::cppgtfs::gtfs::NullContainer, ad::cppgtfs::gtfs::ContContainer,
     ad::cppgtfs::gtfs::ContContainer, ShapeContainer,
+    ad::cppgtfs::gtfs::Container, ad::cppgtfs::gtfs::Container,
     ad::cppgtfs::gtfs::Container>
     Feed;
 typedef ad::cppgtfs::gtfs::TripB<StopTime<ad::cppgtfs::gtfs::Stop>, Service,

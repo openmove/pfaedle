@@ -1,9 +1,9 @@
-FROM debian:buster-slim AS builder
+FROM debian:bookworm-slim AS builder
 
 WORKDIR /app
 
 RUN apt-get update && \
-	apt-get install -y g++ cmake git
+	apt-get install -y g++ cmake git libzip-dev zlib1g-dev libbz2-dev
 
 ADD . /app
 RUN mkdir build && \
@@ -13,10 +13,10 @@ RUN mkdir build && \
 	pwd && \
 	make install
 
-FROM debian:buster-slim
+FROM debian:bookworm-slim
 
 RUN apt-get update && \
-	apt-get install -y libgomp1 && \
+	apt-get install -y libzip4 zlib1g libbz2-1.0 && \
 	rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/etc/pfaedle /usr/local/etc/pfaedle
