@@ -69,6 +69,11 @@ using pfaedle::statsimiclassifier::JaccardClassifier;
 using pfaedle::statsimiclassifier::JaccardGeodistClassifier;
 using pfaedle::statsimiclassifier::PEDClassifier;
 using pfaedle::statsimiclassifier::StatsimiClassifier;
+using util::WARN;
+using util::INFO;
+using util::ERROR;
+using util::DEBUG;
+using util::VDEBUG;
 
 enum class RetCode {
   SUCCESS = 0,
@@ -192,8 +197,8 @@ int main(int argc, char** argv) {
   }
 
   if (cfg.writeOsm.size()) {
-    LOG(INFO) << "Writing filtered XML to " << cfg.writeOsm << " ...";
-    BBoxIdx box(BOX_PADDING);
+    LOG(INFO) << "Writing filtered OSM file to " << cfg.writeOsm << " ...";
+    BBoxIdx box(cfg.boxPadding);
 
     for (size_t i = 0; i < cfg.feedPaths.size(); i++) {
       ShapeBuilder::getGtfsBox(&gtfs[i], cmdCfgMots, cfg.shapeTripId, true,
@@ -213,10 +218,14 @@ int main(int argc, char** argv) {
       LOG(ERROR) << "Could not parse OSM data, reason was:";
       std::cerr << ex.what() << std::endl;
       exit(static_cast<int>(RetCode::OSM_PARSE_ERR));
+    } catch (const std::runtime_error& ex) {
+      LOG(ERROR) << "Could not parse OSM data, reason was:";
+      std::cerr << ex.what() << std::endl;
+      exit(static_cast<int>(RetCode::OSM_PARSE_ERR));
     }
     exit(static_cast<int>(RetCode::SUCCESS));
   } else if (cfg.writeOverpass) {
-    BBoxIdx box(BOX_PADDING);
+    BBoxIdx box(cfg.boxPadding);
     for (size_t i = 0; i < cfg.feedPaths.size(); i++) {
       ShapeBuilder::getGtfsBox(&gtfs[i], cmdCfgMots, cfg.shapeTripId, true,
                                &box, maxSpeed, 0, cfg.verbosity);
@@ -232,7 +241,7 @@ int main(int argc, char** argv) {
     osmBuilder.overpassQryWrite(&std::cout, opts, box);
     exit(static_cast<int>(RetCode::SUCCESS));
   } else if (cfg.writeOsmfilter) {
-    BBoxIdx box(BOX_PADDING);
+    BBoxIdx box(cfg.boxPadding);
     OsmBuilder osmBuilder;
     std::vector<pfaedle::osm::OsmReadOpts> opts;
     for (const auto& o : motCfgReader.getConfigs()) {
@@ -273,7 +282,7 @@ int main(int argc, char** argv) {
       pfaedle::trgraph::Graph graph;
       pfaedle::osm::OsmBuilder osmBuilder;
 
-      pfaedle::osm::BBoxIdx box(BOX_PADDING);
+      pfaedle::osm::BBoxIdx box(cfg.boxPadding);
       ShapeBuilder::getGtfsBox(
           &gtfs[0], usedMots, cfg.shapeTripId, cfg.dropShapes, &box,
           motCfg.osmBuildOpts.maxSpeed, &hopDists, cfg.verbosity);
@@ -382,6 +391,10 @@ int main(int argc, char** argv) {
       LOG(ERROR) << "Could not parse OSM data, reason was:";
       std::cerr << ex.what() << std::endl;
       exit(static_cast<int>(RetCode::OSM_PARSE_ERR));
+    } catch (const std::runtime_error& ex) {
+      LOG(ERROR) << "Could not parse OSM data, reason was:";
+      std::cerr << ex.what() << std::endl;
+      exit(static_cast<int>(RetCode::OSM_PARSE_ERR));
     }
   }
 
@@ -418,10 +431,10 @@ int main(int argc, char** argv) {
              {"dijkstra_iters", stats.dijkstraIters},
              {"time_solve", stats.solveTime},
              {"time_read_osm", tOsmBuild},
-             {"time_read_gtfs", tGtfsBuild},
-             {"time_tot", T_STOP(total)},
+             {"time_read_gtfs", static_cast<int>(tGtfsBuild)},
+             {"time_tot", static_cast<size_t>(T_STOP(total))},
              {"peak-memory", util::readableSize(util::getPeakRSS())},
-             {"peak-memory-bytes", util::getPeakRSS()}}}};
+             {"peak-memory-bytes", static_cast<size_t>(util::getPeakRSS())}}}};
 
     std::ofstream ofs;
     ofs.open(cfg.dbgOutputPath + "/stats.json");

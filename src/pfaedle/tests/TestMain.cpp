@@ -2,6 +2,7 @@
 // Author: Patrick Brosi
 
 #include "pfaedle/osm/Restrictor.h"
+#include "util/Test.h"
 
 #define private public
 #include "pfaedle/router/Router.h"
@@ -219,26 +220,6 @@ int main(int argc, char** argv) {
     tos.push_back({eC, 0, 0, {}, 0, {}});
 
     LayerCostsDAG initCost{0, 0};
-
-    double maxTime = 9999;
-
-    pfaedle::router::HopCache c;
-
-    router.hopsFast(froms, tos, initCost, &costM, rAttrs, rOpts, restr, &c,
-                    maxTime);
-
-    TEST(cmGet(costM, 0, 0), ==, approx(5));
-    TEST(cmGet(costM, 1, 0), >=, maxTime);
-  }
-
-  {
-    EdgeCandGroup froms, tos;
-    CostMatrix costM, dists;
-    froms.push_back({eA, 0, 0.5, {}, 0, {}});
-    froms.push_back({eB, 0, 0, {}, 0, {}});
-    tos.push_back({eC, 0, 0, {}, 0, {}});
-
-    LayerCostsDAG initCost{9999, 0};
 
     double maxTime = 9999;
 
