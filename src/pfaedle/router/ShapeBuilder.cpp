@@ -50,6 +50,11 @@ using pfaedle::router::TripForests;
 using pfaedle::router::TripTrie;
 using pfaedle::trgraph::EdgeGrid;
 using pfaedle::trgraph::NodeGrid;
+using util::DEBUG;
+using util::ERROR;
+using util::INFO;
+using util::VDEBUG;
+using util::WARN;
 using util::geo::latLngToWebMerc;
 using util::geo::M_PER_DEG;
 using util::geo::output::GeoGraphJsonOutput;
@@ -71,7 +76,7 @@ ShapeBuilder::ShapeBuilder(
       _restr(restr),
       _classifier(classifier),
       _router(router) {
-  pfaedle::osm::BBoxIdx box(BOX_PADDING);
+  pfaedle::osm::BBoxIdx box(cfg.boxPadding);
   ShapeBuilder::getGtfsBox(feed, mots, cfg.shapeTripId, cfg.dropShapes, &box,
                            _motCfg.osmBuildOpts.maxSpeed, 0, cfg.verbosity);
 
@@ -412,7 +417,9 @@ Stats ShapeBuilder::shapeify(pfaedle::netgraph::Graph* outNg) {
       continue;
 
     if (!t.getShape().empty() && !_cfg.dropShapes) {
-      refColors[t.getRoute()][t.getRoute()->getColor()].push_back(&t);
+      refColors[t.getRoute()]
+               [{t.getRoute()->getColor(), t.getRoute()->getTextColor()}]
+                   .push_back(&t);
     }
   }
 
@@ -446,7 +453,7 @@ Stats ShapeBuilder::shapeify(pfaedle::netgraph::Graph* outNg) {
 
   for (auto& thr : thrds) thr.join();
 
-  stats.solveTime = TOOK(tStart, TIME());
+  stats.solveTime = TOOK_UNTIL(tStart, TIME());
 
   LOG(INFO) << "Matched " << stats.totNumTrips << " trips in " << std::fixed
             << std::setprecision(2) << stats.solveTime << " ms.";
@@ -491,9 +498,8 @@ void ShapeBuilder::updateRouteColors(const RouteRefColors& refColors) {
     if (route.second.size() == 1) {
       // only one color found for this route, great!
       // update inplace...
-      route.first->setColor(route.second.begin()->first);
-      if (route.first->getColor() != NO_COLOR)
-        route.first->setTextColor(getTextColor(route.first->getColor()));
+      route.first->setColor(route.second.begin()->first.first);
+      route.first->setTextColor(route.second.begin()->first.second);
     } else {
       // are there fare rules using this route?
       std::vector<
@@ -512,7 +518,9 @@ void ShapeBuilder::updateRouteColors(const RouteRefColors& refColors) {
       // add new routes...
       for (auto& c : route.second) {
         // keep the original one intact
-        if (c.first == route.first->getColor()) continue;
+        if (c.first.first == route.first->getColor() &&
+            c.first.second == route.first->getTextColor())
+          continue;
 
         auto routeCp = *route.first;
 
@@ -525,8 +533,8 @@ void ShapeBuilder::updateRouteColors(const RouteRefColors& refColors) {
         }
 
         routeCp.setId(newId);
-        routeCp.setColor(c.first);
-        routeCp.setTextColor(getTextColor(routeCp.getColor()));
+        routeCp.setColor(c.first.first);
+        routeCp.setTextColor(c.first.second);
 
         auto newRoute = _feed->getRoutes().add(routeCp);
 
@@ -1160,7 +1168,9 @@ std::vector<float> ShapeBuilder::getMeasure(
 void ShapeBuilder::shapeWorker(
     const std::vector<const TripForest*>* tries, std::atomic<size_t>* at,
     std::map<std::string, size_t>* shpUse,
-    std::map<Route*, std::map<uint32_t, std::vector<gtfs::Trip*>>>* routeColors,
+    std::map<Route*,
+             std::map<std::pair<uint32_t, uint32_t>, std::vector<gtfs::Trip*>>>*
+        routeColors,
     TrGraphEdgs* gtfsGraph) {
   while (1) {
     size_t j = (*at)++;
@@ -1204,11 +1214,13 @@ void ShapeBuilder::shapeWorker(
           if (_cfg.writeColors && color != NO_COLOR &&
               t->getRoute()->getColor() == NO_COLOR &&
               t->getRoute()->getTextColor() == NO_COLOR) {
-            (*routeColors)[t->getRoute()][color].push_back(t);
+            auto textColor = getTextColor(color);
+            (*routeColors)[t->getRoute()][{color, textColor}].push_back(t);
           } else {
             // else, use the original route color
-            (*routeColors)[t->getRoute()][t->getRoute()->getColor()].push_back(
-                t);
+            auto color = t->getRoute()->getColor();
+            auto textColor = t->getRoute()->getTextColor();
+            (*routeColors)[t->getRoute()][{color, textColor}].push_back(t);
           }
 
           if (!t->getShape().empty() && (*shpUse)[t->getShape()] > 0) {
