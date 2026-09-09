@@ -8,6 +8,7 @@
 
 #include "pfaedle/osm/source/PBFSource.h"
 #include "util/Misc.h"
+#include "util/protobuf/Protobuf.h"
 #ifdef ZLIB_FOUND
 #include <zlib.h>
 #endif
@@ -19,6 +20,7 @@ using pfaedle::osm::source::OsmSourceRelationMember;
 using pfaedle::osm::source::OsmSourceWay;
 using pfaedle::osm::source::PBFSource;
 using util::readAll;
+using namespace util::protobuf;
 
 static const size_t BUFFER_S = 33 * 1024 * 1024;
 static const double RES = .000000001;
@@ -80,7 +82,7 @@ bool PBFSource::getNextBlock() {
 
 // _____________________________________________________________________________
 util::geo::Box<double> PBFSource::parseHeaderBBox(unsigned char*& c) {
-  auto len = parseVarUInt(c);
+  auto len = util::protobuf::parseVarUInt(c);
   auto start = c;
   checkBufferBounds(c + len);
 
@@ -90,16 +92,16 @@ util::geo::Box<double> PBFSource::parseHeaderBBox(unsigned char*& c) {
   double urx = 180;
 
   while ((size_t)(c - start) < len) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1)
-      llx = RES * parseInt(typeId, c);
+      llx = RES * util::protobuf::parseInt(typeId, c);
     else if (typeId.second == 4)
-      lly = RES * parseInt(typeId, c);
+      lly = RES * util::protobuf::parseInt(typeId, c);
     else if (typeId.second == 2)
-      urx = RES * parseInt(typeId, c);
+      urx = RES * util::protobuf::parseInt(typeId, c);
     else if (typeId.second == 3)
-      ury = RES * parseInt(typeId, c);
+      ury = RES * util::protobuf::parseInt(typeId, c);
     else
       skipType(typeId.first, c);
   }
@@ -116,21 +118,21 @@ PBFSource::PrimitiveBlock PBFSource::parseOSMData(const Blob& blob) {
   PBFSource::PrimitiveBlock block;
 
   while ((size_t)(c - start) < blob.datasize) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1) {
       block.stringTable = parseStringTable(c);
     } else if (typeId.second == 2) {
       block.primitiveGroups.push(c);
-      c += parseVarUInt(c);
+      c += util::protobuf::parseVarUInt(c);
     } else if (typeId.second == 17) {
-      block.granularity = parseUInt(typeId, c);
+      block.granularity = util::protobuf::parseUInt(typeId, c);
     } else if (typeId.second == 19) {
-      block.latOffset = parseUInt(typeId, c);
+      block.latOffset = util::protobuf::parseUInt(typeId, c);
     } else if (typeId.second == 20) {
-      block.lonOffset = parseUInt(typeId, c);
+      block.lonOffset = util::protobuf::parseUInt(typeId, c);
     } else if (typeId.second == 18) {
-      block.dateGranularity = parseUInt(typeId, c);
+      block.dateGranularity = util::protobuf::parseUInt(typeId, c);
     } else {
       skipType(typeId.first, c);
     }
@@ -141,7 +143,7 @@ PBFSource::PrimitiveBlock PBFSource::parseOSMData(const Blob& blob) {
 
 // _____________________________________________________________________________
 std::vector<std::string> PBFSource::parseStringTable(unsigned char*& c) {
-  size_t len = parseVarUInt(c);
+  size_t len = util::protobuf::parseVarUInt(c);
   auto start = c;
   checkBufferBounds(c + len);
 
@@ -149,9 +151,9 @@ std::vector<std::string> PBFSource::parseStringTable(unsigned char*& c) {
   table.reserve(len / 10);
 
   while ((size_t)(c - start) < len) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
     if (typeId.second == 1)
-      table.push_back(parseString(c));
+      table.push_back(util::protobuf::parseString(c));
     else
       skipType(typeId.first, c);
   }
@@ -170,16 +172,16 @@ PBFSource::OSMHeader PBFSource::parseOSMHeader(const Blob& blob) {
   header.bbox = {{-180, -90}, {180, 90}};
 
   while ((size_t)(c - start) < blob.datasize) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1)
       header.bbox = parseHeaderBBox(c);
     else if (typeId.second == 4)
-      header.requiredFeatures.push_back(parseString(c));
+      header.requiredFeatures.push_back(util::protobuf::parseString(c));
     else if (typeId.second == 5)
-      header.optionalFeatures.push_back(parseString(c));
+      header.optionalFeatures.push_back(util::protobuf::parseString(c));
     else if (typeId.second == 16)
-      header.writingProgram = parseString(c);
+      header.writingProgram = util::protobuf::parseString(c);
     else
       skipType(typeId.first, c);
   }
@@ -213,7 +215,7 @@ PBFSource::Blob PBFSource::parseBlob(size_t len) {
     } else if (typeId.second == 3) {
 #ifdef ZLIB_FOUND
       // ZLIB compression
-      if (typeId.first != PBFSource::VarType::S) {
+      if (typeId.first != VarType::S) {
         throw std::runtime_error(_path + ": " + "expected byte array value");
       }
       size_t size = parseVarUInt();
@@ -263,150 +265,62 @@ PBFSource::BlobHeader PBFSource::parseBlobHeader(size_t len) {
 }
 
 // _____________________________________________________________________________
-uint32_t PBFSource::parseFixedUInt32() { return parseFixedUInt32(_c); }
-
-// _____________________________________________________________________________
-uint32_t PBFSource::parseFixedUInt32(unsigned char*& c) {
-  // manual assembly to ensure correct endianess
-  uint32_t ret =
-      (static_cast<uint32_t>(static_cast<unsigned char>(c[0]))) |
-      (static_cast<uint32_t>(static_cast<unsigned char>(c[1])) << 8) |
-      (static_cast<uint32_t>(static_cast<unsigned char>(c[2])) << 16) |
-      (static_cast<uint32_t>(static_cast<unsigned char>(c[3])) << 24);
-  c += 4;
-  return ret;
+uint32_t PBFSource::parseFixedUInt32() {
+  return util::protobuf::parseFixedUInt32(_c);
 }
 
 // _____________________________________________________________________________
-uint64_t PBFSource::parseFixedUInt64() { return parseFixedUInt64(_c); }
-
-// _____________________________________________________________________________
-uint64_t PBFSource::parseFixedUInt64(unsigned char*& c) {
-  // manual assembly to ensure correct endianess
-  uint64_t ret =
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[0]))) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[1])) << 8) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[2])) << 16) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[3])) << 24) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[4])) << 32) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[5])) << 40) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[6])) << 48) |
-      (static_cast<uint64_t>(static_cast<unsigned char>(c[7])) << 56);
-  c += 8;
-  return ret;
+uint64_t PBFSource::parseFixedUInt64() {
+  return util::protobuf::parseFixedUInt64(_c);
 }
 
 // _____________________________________________________________________________
-int32_t PBFSource::parseFixedInt32() { return parseFixedInt32(_c); }
-
-// _____________________________________________________________________________
-int32_t PBFSource::parseFixedInt32(unsigned char*& c) {
-  uint32_t i = parseFixedUInt32(c);
-  return (i >> 1) ^ (-(i & 1));
+int32_t PBFSource::parseFixedInt32() {
+  return util::protobuf::parseFixedInt32(_c);
 }
 
 // _____________________________________________________________________________
-int64_t PBFSource::parseFixedInt64() { return parseFixedInt64(_c); }
-
-// _____________________________________________________________________________
-int64_t PBFSource::parseFixedInt64(unsigned char*& c) {
-  uint32_t i = parseFixedUInt64(c);
-  return (i >> 1) ^ (-(i & 1));
+int64_t PBFSource::parseFixedInt64() {
+  return util::protobuf::parseFixedInt64(_c);
 }
 
 // _____________________________________________________________________________
-std::string PBFSource::parseString() { return parseString(_c); }
-
-// _____________________________________________________________________________
-std::string PBFSource::parseString(unsigned char*& c) {
-  auto len = parseVarUInt(c);
-  std::string ret = {reinterpret_cast<const char*>(c), len};
-  c += len;
-  return ret;
-}
-
-// _____________________________________________________________________________
-uint64_t PBFSource::parseUInt(std::pair<VarType, uint8_t> typeId,
-                              unsigned char*& c) {
-  if (typeId.first == PBFSource::VarType::I) return parseFixedUInt32(c);
-  if (typeId.first == PBFSource::VarType::D) return parseFixedUInt64(c);
-  if (typeId.first == PBFSource::VarType::V) return parseVarUInt(c);
-  throw std::runtime_error(_path + ": " + "expected unsigned integer value");
-}
-
-// _____________________________________________________________________________
-int64_t PBFSource::parseInt(std::pair<VarType, uint8_t> typeId,
-                            unsigned char*& c) {
-  if (typeId.first == PBFSource::VarType::I) return parseFixedInt32(c);
-  if (typeId.first == PBFSource::VarType::D) return parseFixedInt64(c);
-  if (typeId.first == PBFSource::VarType::V) return parseVarInt(c);
-  throw std::runtime_error(_path + ": " + "expected signed integer value");
-}
+std::string PBFSource::parseString() { return util::protobuf::parseString(_c); }
 
 // _____________________________________________________________________________
 uint64_t PBFSource::parseUInt(std::pair<VarType, uint8_t> typeId) {
-  return parseUInt(typeId, _c);
+  return util::protobuf::parseUInt(typeId, _c);
 }
 
 // _____________________________________________________________________________
 int64_t PBFSource::parseInt(std::pair<VarType, uint8_t> typeId) {
-  return parseInt(typeId, _c);
+  return util::protobuf::parseInt(typeId, _c);
 }
 
 // _____________________________________________________________________________
-int64_t PBFSource::parseVarInt(unsigned char*& c) {
-  int64_t i = parseVarUInt(c);
-  return (i >> 1) ^ (-(i & 1));
+int64_t PBFSource::parseVarInt() { return util::protobuf::parseVarInt(_c); }
+
+// _____________________________________________________________________________
+uint64_t PBFSource::parseVarUInt() { return util::protobuf::parseVarUInt(_c); }
+
+// _____________________________________________________________________________
+std::pair<VarType, uint8_t> PBFSource::nextTypeAndId() {
+  return util::protobuf::nextTypeAndId(_c);
 }
 
 // _____________________________________________________________________________
-int64_t PBFSource::parseVarInt() { return parseVarInt(_c); }
+void PBFSource::skipType(VarType type) { skipType(type, _c); }
 
 // _____________________________________________________________________________
-uint64_t PBFSource::parseVarUInt(unsigned char*& c) {
-  int i = 0;
-  uint64_t ret = 0;
-  uint64_t cur;
-
-  do {
-    cur = *c;
-    ret |= (uint64_t)((uint8_t)(cur << 1) >> 1) << (i * 7);
-    i++;
-    c++;
-  } while (cur & (1 << 7));
-
-  return ret;
-}
-
-// _____________________________________________________________________________
-uint64_t PBFSource::parseVarUInt() { return parseVarUInt(_c); }
-
-// _____________________________________________________________________________
-std::pair<PBFSource::VarType, uint8_t> PBFSource::nextTypeAndId() {
-  return nextTypeAndId(_c);
-}
-
-// _____________________________________________________________________________
-std::pair<PBFSource::VarType, uint8_t> PBFSource::nextTypeAndId(
-    unsigned char*& c) {
-  uint64_t varInt = parseVarUInt(c);
-  auto type = PBFSource::VarType(((unsigned char)(varInt << 5) >> 5));
-  return {type, (varInt << 1) >> 4};
-}
-
-// _____________________________________________________________________________
-void PBFSource::skipType(PBFSource::VarType type) { skipType(type, _c); }
-
-// _____________________________________________________________________________
-void PBFSource::skipType(PBFSource::VarType type, unsigned char*& c) {
-  if (type == PBFSource::VarType::V)
-    parseVarUInt(c);
-  else if (type == PBFSource::VarType::D)
-    parseFixedUInt64(c);
-  else if (type == PBFSource::VarType::S)
-    parseString(c);
-  else if (type == PBFSource::VarType::I)
-    parseFixedUInt32(c);
+void PBFSource::skipType(VarType type, unsigned char*& c) {
+  if (type == VarType::V)
+    util::protobuf::parseVarUInt(c);
+  else if (type == VarType::D)
+    util::protobuf::parseFixedUInt64(c);
+  else if (type == VarType::S)
+    util::protobuf::parseString(c);
+  else if (type == VarType::I)
+    util::protobuf::parseFixedUInt32(c);
   else
     throw std::runtime_error(_path + ": " + "parse error");
 }
@@ -432,7 +346,7 @@ const OsmSourceNode* PBFSource::nextNode() {
   }
 
   while (checkGroup()) {
-    auto typeId = nextTypeAndId(_curBlock.c);
+    auto typeId = util::protobuf::nextTypeAndId(_curBlock.c);
     if (typeId.second == 1) {
       parseNode(_curBlock.c);
       _curAttr = 0;
@@ -443,9 +357,9 @@ const OsmSourceNode* PBFSource::nextNode() {
       _curBlock.denseNodePtr = 0;
       return nextNode();
     } else if (typeId.second == 4) {
-      skip(parseVarUInt(_curBlock.c));
+      skip(util::protobuf::parseVarUInt(_curBlock.c));
     } else {
-      skip(parseVarUInt(_curBlock.c));
+      skip(util::protobuf::parseVarUInt(_curBlock.c));
     }
   }
 
@@ -484,7 +398,7 @@ bool PBFSource::checkGroup() {
 
     if (_curBlock.c == 0) {
       _curBlock.c = _curBlock.primitiveGroups.front();
-      _curBlock.curGroupLen = parseVarUInt(_curBlock.c);
+      _curBlock.curGroupLen = util::protobuf::parseVarUInt(_curBlock.c);
       _curBlock.primitiveGroups.front() = _curBlock.c;
     }
 
@@ -502,7 +416,7 @@ bool PBFSource::checkGroup() {
 // _____________________________________________________________________________
 void PBFSource::parseWay(unsigned char*& c) {
   // normal node
-  size_t len = parseVarUInt(c);
+  size_t len = util::protobuf::parseVarUInt(c);
   auto start = c;
   checkBufferBounds(c + len);
 
@@ -515,42 +429,42 @@ void PBFSource::parseWay(unsigned char*& c) {
   _curWayMember = 0;
 
   while ((size_t)(c - start) < len) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1) {  // ID
-      _curWay.id = parseUInt(typeId, c);
+      _curWay.id = util::protobuf::parseUInt(typeId, c);
     } else if (typeId.second == 8) {  // member IDs
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
-        auto memberId = parseVarInt(c);
+        auto memberId = util::protobuf::parseVarInt(c);
         if (curMemberID > 0)
           memberId = _curWayMembers[curMemberID - 1] + memberId;
         if (curMemberID >= _curWayMembers.size()) _curWayMembers.push_back(0);
         _curWayMembers[curMemberID++] = memberId;
       }
     } else if (typeId.second == 2) {  // attr keys
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curKey >= _curAttrs.size()) _curAttrs.push_back({0, 0});
-        _curAttrs[curKey++].first = parseVarUInt(c);
+        _curAttrs[curKey++].first = util::protobuf::parseVarUInt(c);
       }
     } else if (typeId.second == 3) {  // attr values
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curValue >= _curAttrs.size()) _curAttrs.push_back({0, 0});
-        _curAttrs[curValue++].second = parseVarUInt(c);
+        _curAttrs[curValue++].second = util::protobuf::parseVarUInt(c);
       }
     } else {
-      c += parseVarUInt(c);
+      c += util::protobuf::parseVarUInt(c);
     }
   }
 }
@@ -558,7 +472,7 @@ void PBFSource::parseWay(unsigned char*& c) {
 // _____________________________________________________________________________
 void PBFSource::parseRelation(unsigned char*& c) {
   // normal node
-  size_t len = parseVarUInt(c);
+  size_t len = util::protobuf::parseVarUInt(c);
   auto start = c;
   checkBufferBounds(c + len);
 
@@ -573,12 +487,12 @@ void PBFSource::parseRelation(unsigned char*& c) {
   _curRelMember = 0;
 
   while ((size_t)(c - start) < len) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1) {  // ID
-      _curRelation.id = parseVarUInt(c);
+      _curRelation.id = util::protobuf::parseVarUInt(c);
     } else if (typeId.second == 8) {  // roles
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
@@ -586,15 +500,15 @@ void PBFSource::parseRelation(unsigned char*& c) {
         if (curRole >= _curRelMembers.size())
           _curRelMembers.push_back({0, 0, 0});
         _curRelMembers[curRole++].role =
-            _curBlock.stringTable[parseVarUInt(c)].c_str();
+            _curBlock.stringTable[util::protobuf::parseVarUInt(c)].c_str();
       }
     } else if (typeId.second == 9) {  // member IDs
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
-        auto memberId = parseVarInt(c);
+        auto memberId = util::protobuf::parseVarInt(c);
         if (curMemberID > 0)
           memberId = _curRelMembers[curMemberID - 1].id + memberId;
         if (curMemberID >= _curRelMembers.size())
@@ -602,35 +516,35 @@ void PBFSource::parseRelation(unsigned char*& c) {
         _curRelMembers[curMemberID++].id = memberId;
       }
     } else if (typeId.second == 10) {  // member types
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curType >= _curRelMembers.size())
           _curRelMembers.push_back({0, 0, 0});
-        _curRelMembers[curType++].type = parseVarUInt(c);
+        _curRelMembers[curType++].type = util::protobuf::parseVarUInt(c);
       }
     } else if (typeId.second == 2) {  // attr keys
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curKey >= _curAttrs.size()) _curAttrs.push_back({0, 0});
-        _curAttrs[curKey++].first = parseVarUInt(c);
+        _curAttrs[curKey++].first = util::protobuf::parseVarUInt(c);
       }
     } else if (typeId.second == 3) {  // attr values
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curValue >= _curAttrs.size()) _curAttrs.push_back({0, 0});
-        _curAttrs[curValue++].second = parseVarUInt(c);
+        _curAttrs[curValue++].second = util::protobuf::parseVarUInt(c);
       }
     } else {
-      c += parseVarUInt(c);
+      c += util::protobuf::parseVarUInt(c);
     }
   }
 }
@@ -638,7 +552,7 @@ void PBFSource::parseRelation(unsigned char*& c) {
 // _____________________________________________________________________________
 void PBFSource::parseNode(unsigned char*& c) {
   // normal node
-  size_t len = parseVarUInt(c);
+  size_t len = util::protobuf::parseVarUInt(c);
   auto start = c;
   checkBufferBounds(c + len);
 
@@ -648,36 +562,38 @@ void PBFSource::parseNode(unsigned char*& c) {
   _curAttrs = {};
 
   while ((size_t)(c - start) < len) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1) {  // ID
-      _curNode.id = parseInt(typeId, c);
+      _curNode.id = util::protobuf::parseInt(typeId, c);
     } else if (typeId.second == 8) {  // lat
-      _curNode.lat = RES * (_curBlock.latOffset +
-                            (parseInt(typeId, c) * _curBlock.granularity));
+      _curNode.lat =
+          RES * (_curBlock.latOffset +
+                 ((double)util::protobuf::parseInt(typeId, c) * _curBlock.granularity));
     } else if (typeId.second == 9) {  // lon
-      _curNode.lon = RES * (_curBlock.lonOffset +
-                            (parseInt(typeId, c) * _curBlock.granularity));
+      _curNode.lon =
+          RES * (_curBlock.lonOffset +
+                 ((double)util::protobuf::parseInt(typeId, c) * _curBlock.granularity));
     } else if (typeId.second == 2) {  // attr keys
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curKey >= _curAttrs.size()) _curAttrs.push_back({0, 0});
-        _curAttrs[curKey++].first = parseVarUInt(c);
+        _curAttrs[curKey++].first = util::protobuf::parseVarUInt(c);
       }
     } else if (typeId.second == 3) {  // attr values
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       while ((size_t)(c - start) < len) {
         if (curValue >= _curAttrs.size()) _curAttrs.push_back({0, 0});
-        _curAttrs[curValue++].second = parseVarUInt(c);
+        _curAttrs[curValue++].second = util::protobuf::parseVarUInt(c);
       }
     } else {
-      c += parseVarUInt(c);
+      c += util::protobuf::parseVarUInt(c);
     }
   }
 }
@@ -686,7 +602,7 @@ void PBFSource::parseNode(unsigned char*& c) {
 std::vector<PBFSource::Node> PBFSource::parseDenseNodes(unsigned char*& c) {
   std::vector<PBFSource::Node> ret;
 
-  size_t len = parseVarUInt(c);
+  size_t len = util::protobuf::parseVarUInt(c);
   auto start = c;
   checkBufferBounds(c + len);
 
@@ -696,16 +612,16 @@ std::vector<PBFSource::Node> PBFSource::parseDenseNodes(unsigned char*& c) {
   size_t curTagPos = 0;
 
   while ((size_t)(c - start) < len) {
-    auto typeId = nextTypeAndId(c);
+    auto typeId = util::protobuf::nextTypeAndId(c);
 
     if (typeId.second == 1) {  // IDs
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       // delta encoded
       while ((size_t)(c - start) < len) {
-        uint64_t nid = parseVarInt(c);
+        uint64_t nid = util::protobuf::parseVarInt(c);
         if (curIdPos > 0) nid = ret[curIdPos - 1].id + nid;
 
         if (curIdPos >= ret.size())
@@ -716,15 +632,15 @@ std::vector<PBFSource::Node> PBFSource::parseDenseNodes(unsigned char*& c) {
         curIdPos++;
       }
     } else if (typeId.second == 5) {  // denseinfo
-      c += parseVarUInt(c);
+      c += util::protobuf::parseVarUInt(c);
     } else if (typeId.second == 8) {  // lat
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       // delta encoded
       while ((size_t)(c - start) < len) {
-        double lat = parseVarInt(c);
+        double lat = util::protobuf::parseVarInt(c);
         if (curLatPos > 0) lat = ret[curLatPos - 1].lat + lat;
 
         if (curLatPos >= ret.size())
@@ -735,13 +651,13 @@ std::vector<PBFSource::Node> PBFSource::parseDenseNodes(unsigned char*& c) {
         curLatPos++;
       }
     } else if (typeId.second == 9) {  // lon
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       // delta encoded
       while ((size_t)(c - start) < len) {
-        double lon = parseVarInt(c);
+        double lon = util::protobuf::parseVarInt(c);
         if (curLonPos > 0) lon = ret[curLonPos - 1].lon + lon;
 
         if (curLonPos >= ret.size())
@@ -752,20 +668,20 @@ std::vector<PBFSource::Node> PBFSource::parseDenseNodes(unsigned char*& c) {
         curLonPos++;
       }
     } else if (typeId.second == 10) {  // attrs
-      size_t len = parseVarUInt(c);
+      size_t len = util::protobuf::parseVarUInt(c);
       auto start = c;
       checkBufferBounds(c + len);
 
       // delta encoded
       while ((size_t)(c - start) < len) {
-        auto key = parseVarUInt(c);
+        auto key = util::protobuf::parseVarUInt(c);
         if (key == 0) {
           curTagPos++;
           continue;
         }
 
         if (curTagPos >= ret.size()) ret.push_back({0, 0, 0, {}});
-        ret[curTagPos].tags.push_back({key, parseVarUInt(c)});
+        ret[curTagPos].tags.push_back({key, util::protobuf::parseVarUInt(c)});
       }
     }
   }
@@ -779,7 +695,7 @@ void PBFSource::skip(size_t n) { _curBlock.c += n; }
 // _____________________________________________________________________________
 const OsmSourceWay* PBFSource::nextWay() {
   while (checkGroup()) {
-    auto typeId = nextTypeAndId(_curBlock.c);
+    auto typeId = util::protobuf::nextTypeAndId(_curBlock.c);
     if (typeId.second == 3) {
       parseWay(_curBlock.c);
 
@@ -787,7 +703,7 @@ const OsmSourceWay* PBFSource::nextWay() {
       _curAttrsPtr = &_curAttrs;
       return &_curWay;
     } else {
-      skip(parseVarUInt(_curBlock.c));
+      skip(util::protobuf::parseVarUInt(_curBlock.c));
     }
   }
 
@@ -811,7 +727,7 @@ uint64_t PBFSource::nextMemberNode() {
 // _____________________________________________________________________________
 const OsmSourceRelation* PBFSource::nextRel() {
   while (checkGroup()) {
-    auto typeId = nextTypeAndId(_curBlock.c);
+    auto typeId = util::protobuf::nextTypeAndId(_curBlock.c);
     if (typeId.second == 4) {
       parseRelation(_curBlock.c);
 
@@ -819,7 +735,7 @@ const OsmSourceRelation* PBFSource::nextRel() {
       _curAttrsPtr = &_curAttrs;
       return &_curRelation;
     } else {
-      skip(parseVarUInt(_curBlock.c));
+      skip(util::protobuf::parseVarUInt(_curBlock.c));
     }
   }
 

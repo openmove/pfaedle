@@ -8,6 +8,7 @@
 
 #include "pfaedle/_config.h"
 #include "pfaedle/osm/output/PBFWriter.h"
+#include "util/protobuf/Protobuf.h"
 #ifdef ZLIB_FOUND
 #include <zlib.h>
 #endif
@@ -15,6 +16,7 @@
 using pfaedle::osm::output::PBFWriter;
 using pfaedle::osm::source::OsmSource;
 using pfaedle::osm::source::PBFSource;
+using namespace util::protobuf;
 
 static const size_t BUFFER_S = 33 * 1024 * 1024;
 static const double RES = .000000001;
@@ -68,11 +70,11 @@ void PBFWriter::writeBlob(const std::string& type,
   auto c = _writeBuffer + 4;
 
   // type
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   writeString(type, c);
 
   // datasize
-  writeTypeAndId({PBFSource::VarType::V, 3}, c);
+  writeTypeAndId({VarType::V, 3}, c);
 #ifdef ZLIB_FOUND
   writeVarUInt(compressedLen + 2 + varUIntNumBytes(compressedLen) +
                    varUIntNumBytes(blob.datasize),
@@ -90,11 +92,11 @@ void PBFWriter::writeBlob(const std::string& type,
 
 #ifdef ZLIB_FOUND
   // raw uncompressed size
-  writeTypeAndId({PBFSource::VarType::V, 2}, c);
+  writeTypeAndId({VarType::V, 2}, c);
   writeVarUInt(blob.datasize, c);
 
   // zlib compressed data
-  writeTypeAndId({PBFSource::VarType::S, 3}, c);
+  writeTypeAndId({VarType::S, 3}, c);
   writeVarUInt(compressedLen, c);
 
   // flush write buffer, which now contains BlobHeader and Blob w/o data
@@ -111,7 +113,7 @@ void PBFWriter::writeBlob(const std::string& type,
   }
 #else
   // if zlib not available, write raw
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   writeVarUInt(compressedLen, c);
 
   // flush write buffer, which now contains BlobHeader and Blob w/o data
@@ -139,7 +141,7 @@ void PBFWriter::writeDenseNodes() {
   auto c = _blockBuffer;
 
   // string table
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   if (_strings.size() == 0) {
     checkBlockBufferBounds(c + 1);
     writeVarUInt(0, c);
@@ -147,14 +149,14 @@ void PBFWriter::writeDenseNodes() {
     checkBlockBufferBounds(c + varUIntNumBytes(_stringTable.size() + 2) + 1 +
                            1 + _stringTable.size());
     writeVarUInt(_stringTable.size() + 2, c);
-    writeTypeAndId({PBFSource::VarType::S, 1}, c);
+    writeTypeAndId({VarType::S, 1}, c);
     writeVarUInt(0, c);
     writeBuf(_stringTable.data(), _stringTable.size(), c);
   }
 
   // primitive group
   checkBlockBufferBounds(c + 1);
-  writeTypeAndId({PBFSource::VarType::S, 2}, c);
+  writeTypeAndId({VarType::S, 2}, c);
   size_t groupSize = 0;
   groupSize += _denseNdIds.size() + varUIntNumBytes(_denseNdIds.size()) + 1;
   groupSize += _denseNdLats.size() + varUIntNumBytes(_denseNdLats.size()) + 1;
@@ -166,34 +168,34 @@ void PBFWriter::writeDenseNodes() {
 
   // dense nodes
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(groupSize));
-  writeTypeAndId({PBFSource::VarType::S, 2}, c);
+  writeTypeAndId({VarType::S, 2}, c);
   writeVarUInt(groupSize, c);
 
   // ids
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(_denseNdIds.size()) +
                          _denseNdIds.size());
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   writeVarUInt(_denseNdIds.size(), c);
   writeBuf(_denseNdIds.data(), _denseNdIds.size(), c);
 
   // lats
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(_denseNdLats.size()) +
                          _denseNdLats.size());
-  writeTypeAndId({PBFSource::VarType::S, 8}, c);
+  writeTypeAndId({VarType::S, 8}, c);
   writeVarUInt(_denseNdLats.size(), c);
   writeBuf(_denseNdLats.data(), _denseNdLats.size(), c);
 
   // lngs
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(_denseNdLngs.size()) +
                          _denseNdLngs.size());
-  writeTypeAndId({PBFSource::VarType::S, 9}, c);
+  writeTypeAndId({VarType::S, 9}, c);
   writeVarUInt(_denseNdLngs.size(), c);
   writeBuf(_denseNdLngs.data(), _denseNdLngs.size(), c);
 
   // attrs
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(_denseNdAttrs.size()) +
                          _denseNdAttrs.size());
-  writeTypeAndId({PBFSource::VarType::S, 10}, c);
+  writeTypeAndId({VarType::S, 10}, c);
   writeVarUInt(_denseNdAttrs.size(), c);
   writeBuf(_denseNdAttrs.data(), _denseNdAttrs.size(), c);
 
@@ -223,7 +225,7 @@ void PBFWriter::writeWays() {
 
   // string table
   checkBlockBufferBounds(c + 1);
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   if (_strings.size() == 0) {
     checkBlockBufferBounds(c + 1);
     writeVarUInt(0, c);
@@ -231,14 +233,14 @@ void PBFWriter::writeWays() {
     checkBlockBufferBounds(c + varUIntNumBytes(_stringTable.size() + 2) + 1 +
                            1 + _stringTable.size());
     writeVarUInt(_stringTable.size() + 2, c);
-    writeTypeAndId({PBFSource::VarType::S, 1}, c);
+    writeTypeAndId({VarType::S, 1}, c);
     writeVarUInt(0, c);
     writeBuf(_stringTable.data(), _stringTable.size(), c);
   }
 
   // primitive group
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(_ways.size()) + _ways.size());
-  writeTypeAndId({PBFSource::VarType::S, 2}, c);
+  writeTypeAndId({VarType::S, 2}, c);
   writeVarUInt(_ways.size(), c);
 
   // ways
@@ -263,7 +265,7 @@ void PBFWriter::writeRels() {
 
   // string table
   checkBlockBufferBounds(c + 1);
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   if (_strings.size() == 0) {
     checkBlockBufferBounds(c + 1);
     writeVarUInt(0, c);
@@ -271,14 +273,14 @@ void PBFWriter::writeRels() {
     checkBlockBufferBounds(c + varUIntNumBytes(_stringTable.size() + 2) + 1 +
                            1 + _stringTable.size());
     writeVarUInt(_stringTable.size() + 2, c);
-    writeTypeAndId({PBFSource::VarType::S, 1}, c);
+    writeTypeAndId({VarType::S, 1}, c);
     writeVarUInt(0, c);
     writeBuf(_stringTable.data(), _stringTable.size(), c);
   }
 
   // primitive group
   checkBlockBufferBounds(c + 1 + varUIntNumBytes(_rels.size()) + _rels.size());
-  writeTypeAndId({PBFSource::VarType::S, 2}, c);
+  writeTypeAndId({VarType::S, 2}, c);
   writeVarUInt(_rels.size(), c);
 
   // rels
@@ -301,96 +303,34 @@ const PBFSource::Blob PBFWriter::writeOSMHeader(
   auto c = _blockBuffer;
 
   // header bbox
-  writeTypeAndId({PBFSource::VarType::S, 1}, c);
+  writeTypeAndId({VarType::S, 1}, c);
   size_t s = varIntNumBytes(header.bbox.getLowerLeft().getX() / RES) +
              varIntNumBytes(header.bbox.getLowerLeft().getY() / RES) +
              varIntNumBytes(header.bbox.getUpperRight().getX() / RES) +
              varIntNumBytes(header.bbox.getUpperRight().getY() / RES) + 4;
   writeVarUInt(s, c);
-  writeTypeAndId({PBFSource::VarType::V, 1}, c);
+  writeTypeAndId({VarType::V, 1}, c);
   writeVarInt(header.bbox.getLowerLeft().getX() / RES, c);
-  writeTypeAndId({PBFSource::VarType::V, 4}, c);
+  writeTypeAndId({VarType::V, 4}, c);
   writeVarInt(header.bbox.getLowerLeft().getY() / RES, c);
-  writeTypeAndId({PBFSource::VarType::V, 2}, c);
+  writeTypeAndId({VarType::V, 2}, c);
   writeVarInt(header.bbox.getUpperRight().getX() / RES, c);
-  writeTypeAndId({PBFSource::VarType::V, 3}, c);
+  writeTypeAndId({VarType::V, 3}, c);
   writeVarInt(header.bbox.getUpperRight().getY() / RES, c);
 
   // writing program
-  writeTypeAndId({PBFSource::VarType::S, 16}, c);
+  writeTypeAndId({VarType::S, 16}, c);
   writeString(header.writingProgram, c);
 
   // features
-  writeTypeAndId({PBFSource::VarType::S, 4}, c);
+  writeTypeAndId({VarType::S, 4}, c);
   writeString("OsmSchema-V0.6", c);
-  writeTypeAndId({PBFSource::VarType::S, 4}, c);
+  writeTypeAndId({VarType::S, 4}, c);
   writeString("DenseNodes", c);
 
   ret.datasize = c - _blockBuffer;
 
   return ret;
-}
-
-// _____________________________________________________________________________
-size_t PBFWriter::varUIntNumBytes(uint64_t val) const {
-  if (val == 0) return 1;
-  // 7 bit payload per byte
-  return ceil((floor(log2(val)) + 1) / 7);
-}
-
-// _____________________________________________________________________________
-size_t PBFWriter::varIntNumBytes(int64_t val) const {
-  // 7 bit payload per byte
-  return varUIntNumBytes((static_cast<uint64_t>(val) << 1) ^
-                         static_cast<uint64_t>(val >> 63));
-}
-
-// _____________________________________________________________________________
-void PBFWriter::writeVarInt(int64_t val, unsigned char*& c) const {
-  writeVarUInt(
-      (static_cast<uint64_t>(val) << 1) ^ static_cast<uint64_t>(val >> 63), c);
-}
-
-// _____________________________________________________________________________
-void PBFWriter::writeVarUInt(uint64_t val, unsigned char*& c) const {
-  while (val >= 128) {  // as long as we have a value that doesnt fit in 7 bits
-    // take one byte, ignore highest bit and set to 1 (continue)
-    *c = static_cast<uint8_t>(val) | 128;
-    c++;
-    // shift by the written 7 bits
-    val = val >> 7;
-  }
-
-  // remaining last byte, with unset continuation bit
-  *c = static_cast<uint8_t>(val);
-  c++;
-}
-
-// _____________________________________________________________________________
-void PBFWriter::writeString(const std::string& str, unsigned char*& c) const {
-  writeVarUInt(str.size(), c);
-  memcpy(c, str.c_str(), str.size());
-  c += str.size();
-}
-
-// _____________________________________________________________________________
-void PBFWriter::writeBuf(const unsigned char* src, size_t s,
-                         unsigned char*& c) const {
-  memcpy(c, src, s);
-  c += s;
-}
-
-// _____________________________________________________________________________
-void PBFWriter::writeTypeAndId(
-    const std::pair<PBFSource::VarType, uint8_t>& typeId,
-    unsigned char*& c) const {
-  uint64_t byte = 0;
-  // set type
-  byte |= typeId.first;
-  // set id
-  byte |= (static_cast<uint64_t>(typeId.second) << 3);
-
-  writeVarUInt(byte, c);
 }
 
 // _____________________________________________________________________________
@@ -428,24 +368,24 @@ void PBFWriter::writeWay(const OsmWay& w) {
                         varUIntNumBytes(_curKeys.size()) + 1 + _curKeys.size() +
                         varUIntNumBytes(_curVals.size()) + 1 + _curVals.size() +
                         varUIntNumBytes(_curRefs.size()) + 1 + _curRefs.size());
-  writeTypeAndId({PBFSource::VarType::V, 1}, c);
+  writeTypeAndId({VarType::V, 1}, c);
   writeVarUInt(w.id, c);
 
-  writeTypeAndId({PBFSource::VarType::S, 2}, c);
+  writeTypeAndId({VarType::S, 2}, c);
   writeVarUInt(_curKeys.size(), c);
   writeBuf(_curKeys.data(), _curKeys.size(), c);
 
-  writeTypeAndId({PBFSource::VarType::S, 3}, c);
+  writeTypeAndId({VarType::S, 3}, c);
   writeVarUInt(_curVals.size(), c);
   writeBuf(_curVals.data(), _curVals.size(), c);
 
-  writeTypeAndId({PBFSource::VarType::S, 8}, c);
+  writeTypeAndId({VarType::S, 8}, c);
   writeVarUInt(_curRefs.size(), c);
   writeBuf(_curRefs.data(), _curRefs.size(), c);
 
   // write way to ways
   c = need(_ways, 1 + varUIntNumBytes(_curWay.size()) + _curWay.size());
-  writeTypeAndId({PBFSource::VarType::S, 3}, c);
+  writeTypeAndId({VarType::S, 3}, c);
   writeVarUInt(_curWay.size(), c);
   writeBuf(_curWay.data(), _curWay.size(), c);
 
@@ -562,32 +502,32 @@ void PBFWriter::writeRel(const OsmRel& rel, const OsmIdList& nodes,
                     _curRefs.size() + varUIntNumBytes(_curRoles.size()) + 1 +
                     _curRoles.size() + varUIntNumBytes(_curTypes.size()) + 1 +
                     _curTypes.size());
-  writeTypeAndId({PBFSource::VarType::V, 1}, c);
+  writeTypeAndId({VarType::V, 1}, c);
   writeVarUInt(rel.id, c);
 
-  writeTypeAndId({PBFSource::VarType::S, 2}, c);
+  writeTypeAndId({VarType::S, 2}, c);
   writeVarUInt(_curKeys.size(), c);
   writeBuf(_curKeys.data(), _curKeys.size(), c);
 
-  writeTypeAndId({PBFSource::VarType::S, 3}, c);
+  writeTypeAndId({VarType::S, 3}, c);
   writeVarUInt(_curVals.size(), c);
   writeBuf(_curVals.data(), _curVals.size(), c);
 
-  writeTypeAndId({PBFSource::VarType::S, 9}, c);
+  writeTypeAndId({VarType::S, 9}, c);
   writeVarUInt(_curRefs.size(), c);
   writeBuf(_curRefs.data(), _curRefs.size(), c);
 
-  writeTypeAndId({PBFSource::VarType::S, 8}, c);
+  writeTypeAndId({VarType::S, 8}, c);
   writeVarUInt(_curRoles.size(), c);
   writeBuf(_curRoles.data(), _curRoles.size(), c);
 
-  writeTypeAndId({PBFSource::VarType::S, 10}, c);
+  writeTypeAndId({VarType::S, 10}, c);
   writeVarUInt(_curTypes.size(), c);
   writeBuf(_curTypes.data(), _curTypes.size(), c);
 
   // write rel to rels
   c = need(_rels, 1 + varUIntNumBytes(_curRel.size()) + _curRel.size());
-  writeTypeAndId({PBFSource::VarType::S, 4}, c);
+  writeTypeAndId({VarType::S, 4}, c);
   writeVarUInt(_curRel.size(), c);
   writeBuf(_curRel.data(), _curRel.size(), c);
 
@@ -606,7 +546,7 @@ size_t PBFWriter::getStringId(const std::string& str) {
   auto kStr = _strings.find(str);
   if (kStr == _strings.end()) {
     auto c = need(_stringTable, varUIntNumBytes(str.size()) + str.size() + 1);
-    writeTypeAndId({PBFSource::VarType::S, 1}, c);
+    writeTypeAndId({VarType::S, 1}, c);
     writeString(str, c);
     kStr = _strings
                .insert(std::pair<std::string, size_t>{str, _strings.size() + 1})

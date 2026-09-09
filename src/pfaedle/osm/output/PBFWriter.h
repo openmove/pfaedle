@@ -51,17 +51,8 @@ class PBFWriter : public OsmWriter {
   void writeBlob(const std::string& type, const source::PBFSource::Blob& blob);
   const source::PBFSource::Blob writeOSMHeader(
       const source::PBFSource::OSMHeader& header);
-  void writeTypeAndId(
-      const std::pair<source::PBFSource::VarType, uint8_t>& typeId,
-      unsigned char*& c) const;
-  void writeVarUInt(uint64_t val, unsigned char*& c) const;
-  size_t varUIntNumBytes(uint64_t val) const;
-  void writeVarInt(int64_t val, unsigned char*& c) const;
-  size_t varIntNumBytes(int64_t val) const;
-  void writeString(const std::string& str, unsigned char*& c) const;
   size_t getStringId(const std::string& str);
   unsigned char* need(std::vector<unsigned char>& v, size_t n) const;
-  void writeBuf(const unsigned char* src, size_t s, unsigned char*& c) const;
   void checkBlockBufferBounds(const unsigned char* c) const;
 };
 

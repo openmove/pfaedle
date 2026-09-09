@@ -9,20 +9,16 @@
 
 #include "pfaedle/osm/source/OsmSource.h"
 #include "util/geo/Geo.h"
+#include "util/protobuf/Protobuf.h"
 
 namespace pfaedle {
 namespace osm {
 namespace source {
 
+using util::protobuf::VarType;
+
 class PBFSource : public OsmSource {
  public:
-  enum VarType : uint8_t {
-    V = 0,
-    D = 1,
-    S = 2,
-    I = 5,
-  };
-
   struct Node {
     double lat, lon;
     uint64_t id;
@@ -98,25 +94,15 @@ class PBFSource : public OsmSource {
   std::vector<std::string> parseStringTable(unsigned char*& c);
   Blob parseBlob(size_t len);
   std::pair<VarType, uint8_t> nextTypeAndId();
-  std::pair<VarType, uint8_t> nextTypeAndId(unsigned char*& c);
   std::string parseString();
-  std::string parseString(unsigned char*& c);
   uint32_t parseFixedUInt32();
-  uint32_t parseFixedUInt32(unsigned char*& c);
   uint64_t parseFixedUInt64();
-  uint64_t parseFixedUInt64(unsigned char*& c);
   int32_t parseFixedInt32();
-  int32_t parseFixedInt32(unsigned char*& c);
   int64_t parseFixedInt64();
-  int64_t parseFixedInt64(unsigned char*& c);
   int64_t parseVarInt();
-  int64_t parseVarInt(unsigned char*& c);
   uint64_t parseVarUInt();
-  uint64_t parseVarUInt(unsigned char*& c);
   uint64_t parseUInt(std::pair<VarType, uint8_t> typeId);
   int64_t parseInt(std::pair<VarType, uint8_t> typeId);
-  uint64_t parseUInt(std::pair<VarType, uint8_t> typeId, unsigned char*& c);
-  int64_t parseInt(std::pair<VarType, uint8_t> typeId, unsigned char*& c);
   void skipType(VarType type, unsigned char*& c);
   void skipType(VarType type);
   void skip(size_t n);
